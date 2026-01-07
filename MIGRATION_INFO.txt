@@ -1,0 +1,5 @@
+﻿Database migrations will be handled by the application on first startup.
+This is normal for development.
+
+To manually run migrations later:
+python -m alembic upgrade head

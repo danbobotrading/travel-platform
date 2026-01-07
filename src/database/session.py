@@ -1,36 +1,24 @@
-"""
-Database session management for Travel Platform.
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from core.config.settings import settings
 
-This module provides async session management with dependency injection
-for FastAPI and proper cleanup.
-"""
+engine = create_async_engine(
+    str(settings.DATABASE_URL),
+    echo=settings.DEBUG,
+)
 
-from typing import AsyncGenerator
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.database.connection import Database
-
-
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Get database session for dependency injection.
-    
-    Yields:
-        AsyncSession: Database session
-    
-    Usage:
-        @app.get("/items")
-        async def read_items(session: AsyncSession = Depends(get_session)):
-            result = await session.execute(select(Item))
-            return result.scalars().all()
-    """
-    async with Database.get_session() as session:
-        yield session
-
-
-# Export types
-__all__ = [
-    "get_session",
-    "AsyncSession",
-]
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
