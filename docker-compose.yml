@@ -212,4 +212,134 @@ services:
       - travel_network
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-     
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  # Grafana for Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: travel_platform_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    networks:
+      - travel_network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # MailHog for Email Testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: travel_platform_mailhog
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - travel_network
+    restart: unless-stopped
+
+  # Jaeger for Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: travel_platform_jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    networks:
+      - travel_network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: travel_platform_nginx
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./logs/nginx:/var/log/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - travel_network
+    depends_on:
+      - api
+      - bot
+    restart: unless-stopped
+
+  # Traefik for Dynamic Reverse Proxy (Alternative to Nginx)
+  traefik:
+    image: traefik:v3.0
+    container_name: travel_platform_traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=admin@travelplatform.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./docker/traefik/letsencrypt:/letsencrypt"
+    networks:
+      - travel_network
+    restart: unless-stopped
+
+  # Portainer for Container Management
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: travel_platform_portainer
+    command: -H unix:///var/run/docker.sock
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - portainer_data:/data
+    ports:
+      - "9000:9000"
+    networks:
+      - travel_network
+    restart: unless-stopped
+
+networks:
+  travel_network:
+    driver: bridge
+    name: travel_platform_network
+
+volumes:
+  postgres_data:
+    driver: local
+    name: travel_platform_postgres_data
+  redis_data:
+    driver: local
+    name: travel_platform_redis_data
+  pgadmin_data:
+    driver: local
+    name: travel_platform_pgadmin_data
+  prometheus_data:
+    driver: local
+    name: travel_platform_prometheus_data
+  grafana_data:
+    driver: local
+    name: travel_platform_grafana_data
+  portainer_data:
+    driver: local
+    name: travel_platform_portainer_data
