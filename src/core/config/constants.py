@@ -443,4 +443,53 @@ class ErrorCodes:
     # Authentication errors (2000-2999)
     AUTHENTICATION_FAILED = 2000
     INVALID_TOKEN = 2001
-    EXPIRED_TOKEN =
+    EXPIRED_TOKEN = 2002
+    INVALID_CREDENTIALS = 2003
+    ACCOUNT_LOCKED = 2004
+    ACCOUNT_DISABLED = 2005
+    INSUFFICIENT_PERMISSIONS = 2006
+    
+    # Resource errors (3000-3999)
+    NOT_FOUND = 3000
+    ALREADY_EXISTS = 3001
+    CONFLICT = 3002
+    LIMIT_EXCEEDED = 3003
+    INSUFFICIENT_FUNDS = 3004
+    OUT_OF_STOCK = 3005
+    
+    # System errors (4000-4999)
+    INTERNAL_ERROR = 4000
+    SERVICE_UNAVAILABLE = 4001
+    DATABASE_ERROR = 4002
+    NETWORK_ERROR = 4003
+    EXTERNAL_API_ERROR = 4004
+    DECRYPTION_ERROR = 4005
+    ENCRYPTION_ERROR = 4006
+    
+    # Business logic errors (5000-5999)
+    BOOKING_ERROR = 5000
+    PAYMENT_ERROR = 5001
+    FLIGHT_UNAVAILABLE = 5002
+    HOTEL_UNAVAILABLE = 5003
+    PRICE_CHANGED = 5004
+    POLICY_VIOLATION = 5005
+    
+    # Rate limiting (6000-6999)
+    RATE_LIMIT_EXCEEDED = 6000
+
+
+# Export constants for easy access
+__all__ = [
+    "AppConstants",
+    "DatabaseConstants",
+    "SecurityConstants",
+    "ApiConstants",
+    "CacheConstants",
+    "UserRole",
+    "BookingStatus",
+    "PaymentStatus",
+    "FlightClass",
+    "Currency",
+    "Language",
+    "ErrorCodes",
+]
