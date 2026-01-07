@@ -1,0 +1,215 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: travel_platform_postgres
+    environment:
+      POSTGRES_USER: travel_user
+      POSTGRES_PASSWORD: travel_password
+      POSTGRES_DB: travel_platform
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - travel_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travel_user -d travel_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: travel_platform_redis
+    command: redis-server --appendonly yes --requirepass redis_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - travel_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Commander (Web UI)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: travel_platform_redis_commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redis_password
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin
+    ports:
+      - "8081:8081"
+    networks:
+      - travel_network
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # PgAdmin (Database Admin)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: travel_platform_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@travelplatform.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./scripts/pgadmin-servers.json:/pgadmin4/servers.json
+    ports:
+      - "5050:80"
+    networks:
+      - travel_network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Main Application API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: travel_platform_api
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://travel_user:travel_password@postgres:5432/travel_platform
+      - REDIS_URL=redis://:redis_password@redis:6379/0
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port
+    networks:
+      - travel_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+    restart: unless-stopped
+
+  # Telegram Bot Service
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: travel_platform_bot
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://travel_user:travel_password@postgres:5432/travel_platform
+      - REDIS_URL=redis://:redis_password@redis:6379/0
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    networks:
+      - travel_network
+    depends_on:
+      - api
+      - redis
+    command: python -m src.bot.main
+    restart: unless-stopped
+
+  # Celery Worker for Background Tasks
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: travel_platform_worker
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://travel_user:travel_password@postgres:5432/travel_platform
+      - REDIS_URL=redis://:redis_password@redis:6379/0
+      - CELERY_BROKER_URL=redis://:redis_password@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:redis_password@redis:6379/2
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    networks:
+      - travel_network
+    depends_on:
+      - redis
+      - api
+    command: celery -A src.workers.celery:celery_app worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+
+  # Celery Beat for Scheduled Tasks
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: travel_platform_beat
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://travel_user:travel_password@postgres:5432/travel_platform
+      - REDIS_URL=redis://:redis_password@redis:6379/0
+      - CELERY_BROKER_URL=redis://:redis_password@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:redis_password@redis:6379/2
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    networks:
+      - travel_network
+    depends_on:
+      - redis
+      - worker
+    command: celery -A src.workers.celery:celery_app beat --loglevel=info
+    restart: unless-stopped
+
+  # Flower for Celery Monitoring
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: travel_platform_flower
+    environment:
+      - CELERY_BROKER_URL=redis://:redis_password@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:redis_password@redis:6379/2
+    ports:
+      - "5555:5555"
+    networks:
+      - travel_network
+    depends_on:
+      - worker
+      - beat
+    command: celery -A src.workers.celery:celery_app flower --port=5555 --broker=${CELERY_BROKER_URL}
+    restart: unless-stopped
+
+  # Prometheus for Metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: travel_platform_prometheus
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - travel_network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+     
