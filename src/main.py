@@ -9,6 +9,8 @@ from src.core.config.settings import settings
 from src.travel_platform.utils.logger import setup_structlog as setup_logging
 from src.database.connection import Database
 from src.api.v1.router import api_router
+from src.bot.webhook import router as webhook_router
+from src.bot.setup import setup_bot, stop_bot
 from src.api.middleware import setup_middleware
 
 # Setup logging
@@ -46,6 +48,9 @@ setup_middleware(app)
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
 
+# Include bot webhook routes
+app.include_router(webhook_router, prefix="/bot")
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():
@@ -58,6 +63,10 @@ async def startup_event():
         await Database.connect()
         logger.info("✅ Database connected")
 
+        # Initialize bot
+        await setup_bot()
+        logger.info("✅ Bot initialized")
+
     except Exception as e:
         logger.error(f"❌ Startup failed: {e}")
         raise
@@ -68,6 +77,7 @@ async def shutdown_event():
     """Cleanup on shutdown."""
     logger.info("🛑 Shutting down application...")
     await Database.disconnect()
+    await stop_bot()
     logger.info("✅ Clean shutdown completed")
 
 # Health check endpoint
@@ -112,3 +122,4 @@ if __name__ == "__main__":
         reload=app_env == "development",
         log_level="info"
     )
+

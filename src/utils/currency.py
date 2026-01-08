@@ -8,12 +8,30 @@ from typing import Dict, Optional, Any, Union
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta
 from functools import lru_cache
+import sys
+import os
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from ..core.config.settings import settings
-from .logger import logger
+try:
+    from src.core.config.settings import settings
+    from src.utils.logger import logger
+except ImportError:
+    # Fallback for direct execution
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    # Create mock settings
+    class MockSettings:
+        CURRENCY_API_URL = "https://api.exchangerate-api.com/v4/latest/ZAR"
+        CURRENCY_API_KEY = None
+    
+    settings = MockSettings()
 
 
 class CurrencyConverter:
@@ -75,7 +93,7 @@ class CurrencyConverter:
         api_key = getattr(settings, 'CURRENCY_API_KEY', None)
         
         if not api_url:
-            logger.warning("currency_api_not_configured", message="Using fallback rates")
+            print("⚠️ Currency API not configured, using fallback rates")
             return self.FALLBACK_RATES.copy()
         
         try:
@@ -100,18 +118,14 @@ class CurrencyConverter:
                     if currency not in normalized_rates and currency in self.FALLBACK_RATES:
                         normalized_rates[currency] = self.FALLBACK_RATES[currency]
                 
-                logger.info("currency_rates_fetched", 
-                          source="api", 
-                          currencies=len(normalized_rates))
+                print(f"✅ Fetched {len(normalized_rates)} currency rates from API")
                 return normalized_rates
             else:
-                logger.warning("currency_api_no_zar", data=data)
+                print("⚠️ API response doesn't contain ZAR, using fallback rates")
                 return self.FALLBACK_RATES.copy()
                 
         except Exception as e:
-            logger.error("currency_fetch_failed", 
-                        error=str(e), 
-                        api_url=api_url)
+            print(f"⚠️ Failed to fetch currency rates: {e}, using fallback")
             return self.FALLBACK_RATES.copy()
     
     async def get_rates(self, force_refresh: bool = False) -> Dict[str, float]:
@@ -174,12 +188,6 @@ class CurrencyConverter:
             rounding=ROUND_HALF_UP
         )
         
-        logger.debug("currency_conversion", 
-                    amount=float(amount),
-                    from_currency=from_currency,
-                    to_currency=to_currency,
-                    result=float(result))
-        
         return result
     
     async def format_amount(
@@ -197,7 +205,10 @@ class CurrencyConverter:
             # Format based on currency
             if currency in ['ZAR', 'NGN', 'KES', 'GHS', 'ETB', 'EGP', 'TZS', 'UGX', 'RWF']:
                 # Use comma as thousand separator for African currencies
-                amount_str = f"{amount:,.2f}"
+                if isinstance(amount, (int, float)):
+                    amount_str = f"{amount:,.2f}"
+                else:
+                    amount_str = f"{amount:,.2f}"
             else:
                 amount_str = f"{amount:.2f}"
             
@@ -270,3 +281,35 @@ async def cleanup_currency_converter():
     if _converter:
         await _converter.close()
         _converter = None
+
+
+# Test function
+async def main():
+    """Test the currency converter."""
+    converter = await get_converter()
+    
+    print("African Currencies:")
+    for code, info in converter.get_african_currencies().items():
+        print(f"  {code}: {info['name']} ({info['symbol']})")
+    
+    print("\nExchange Rates (ZAR based):")
+    rates = await converter.get_rates()
+    for currency in ['ZAR', 'NGN', 'KES', 'GHS', 'USD']:
+        if currency in rates:
+            print(f"  1 ZAR = {rates[currency]:.4f} {currency}")
+    
+    print("\nSample Conversions (1000 ZAR):")
+    conversions = [('ZAR', 'NGN'), ('ZAR', 'KES'), ('ZAR', 'GHS'), ('ZAR', 'USD')]
+    for from_curr, to_curr in conversions:
+        try:
+            result = await convert_currency(1000, from_curr, to_curr)
+            formatted = await format_currency(result, to_curr)
+            print(f"  1000 {from_curr} = {formatted}")
+        except Exception as e:
+            print(f"  ❌ {from_curr} to {to_curr}: {e}")
+    
+    await cleanup_currency_converter()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

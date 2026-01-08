@@ -5,7 +5,7 @@ Telegram bot configuration for Travel Platform.
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
-from src.core.config.settings import settings
+from src.bot.env_loader import get_bot_token, get_admin_ids
 from src.travel_platform.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -26,27 +26,16 @@ class BotConfig:
 
 
 def get_bot_config() -> BotConfig:
-    """Get bot configuration from settings."""
-    try:
-        token = settings.TELEGRAM_BOT_TOKEN.get_secret_value()
-    except AttributeError:
-        token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
-        if hasattr(token, 'get_secret_value'):
-            token = token.get_secret_value()
+    """Get bot configuration from environment."""
+    token = get_bot_token()
     
-    webhook_url = getattr(settings, 'TELEGRAM_WEBHOOK_URL', None)
-    webhook_secret = None
-    if hasattr(settings, 'TELEGRAM_WEBHOOK_SECRET'):
-        secret = settings.TELEGRAM_WEBHOOK_SECRET
-        if secret and hasattr(secret, 'get_secret_value'):
-            webhook_secret = secret.get_secret_value()
-    
-    admin_ids = getattr(settings, 'TELEGRAM_ADMIN_IDS', [])
+    if not token:
+        logger.warning("bot_token_not_found", source="environment")
     
     return BotConfig(
         token=token,
-        api_url=getattr(settings, 'TELEGRAM_API_URL', 'https://api.telegram.org/bot'),
-        webhook_url=webhook_url,
-        webhook_secret=webhook_secret,
-        admin_ids=admin_ids
+        api_url="https://api.telegram.org/bot",
+        webhook_url=None,  # Will be set when webhook configured
+        webhook_secret=None,
+        admin_ids=get_admin_ids()
     )

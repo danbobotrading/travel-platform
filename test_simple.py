@@ -1,41 +1,35 @@
-import asyncio
+﻿import asyncio
 import sys
-from pathlib import Path
+import os
 
-# Add paths
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "src"))
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-async def test():
-    print("?? Testing database setup...")
-    
+from database.session import AsyncSessionLocal
+
+async def test_db():
     try:
-        # Test 1: Import settings - use correct path
-        from core.config.settings import settings
-        print(f"? Settings loaded: {settings.DATABASE_URL}")
-        print(f"? App name: {settings.APP_NAME}")
-        
-        # Test 2: Import Base
-        from database.base import Base
-        print("? Base imported")
-        
-        # Test 3: Import model
-        from database.models.user import User
-        print("? User model imported")
-        
-        # Test 4: Check table metadata
-        print(f"? User table: {User.__tablename__}")
-        
-        print("\n?? Basic imports work!")
-        return True
-        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute("SELECT version();")
+            version = result.scalar()
+            print(f"✅ PostgreSQL connected: {version}")
+            
+            # Check if users table exists
+            result = await session.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'users'
+                );
+            """)
+            exists = result.scalar()
+            print(f"✅ Users table exists: {exists}")
+            
     except Exception as e:
-        print(f"\n? Test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Database error: {type(e).__name__}: {e}")
         return False
+    
+    return True
 
 if __name__ == "__main__":
-    success = asyncio.run(test())
+    success = asyncio.run(test_db())
     sys.exit(0 if success else 1)
