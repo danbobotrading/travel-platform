@@ -1,0 +1,54 @@
+"""
+Format flight results for Telegram messages
+"""
+
+from datetime import datetime
+from src.utils.currency_simple import convert_currency, get_currency_symbol
+
+def format_flight_results(flights, user_currency="ZAR"):
+    """Format flight search results for Telegram"""
+    
+    if not flights:
+        return "❌ *No flights found*\n\nTry different dates or airports."
+    
+    # Get currency symbol
+    currency_symbol = get_currency_symbol(user_currency)
+    
+    # Format each flight
+    results_text = f"✈️ *Found {len(flights)} Flights*\n\n"
+    
+    for i, flight in enumerate(flights[:5], 1):  # Show top 5
+        # Convert price to user's currency
+        price = convert_currency(
+            flight.get('price', 0),
+            flight.get('currency', 'USD'),
+            user_currency
+        )
+        
+        # Format flight details
+        results_text += f"*{i}. {flight.get('airline', 'Unknown')}*\n"
+        results_text += f"• 🛫 {flight.get('departure_time', '')}\n"
+        results_text += f"• 🛬 {flight.get('arrival_time', '')}\n"
+        results_text += f"• ⏱️ Duration: {flight.get('duration', '')}\n"
+        results_text += f"• 💰 Price: {currency_symbol}{price:,.0f} {user_currency}\n"
+        
+        # Add affiliate link if available
+        if flight.get('affiliate_link'):
+            results_text += f"• 🔗 [Book Now]({flight['affiliate_link']})\n"
+        
+        results_text += "\n"
+    
+    results_text += "\n💰 *Commission Earned:* We earn commission when you book through our links."
+    
+    return results_text
+
+def format_quick_flight_info(flight):
+    """Format single flight for inline query"""
+    currency_symbol = get_currency_symbol(flight.get('currency', 'ZAR'))
+    
+    text = f"✈️ {flight.get('airline', '')}\n"
+    text += f"Route: {flight.get('route', '')}\n"
+    text += f"Price: {currency_symbol}{flight.get('price', 0):,.0f}\n"
+    text += f"Duration: {flight.get('duration', '')}"
+    
+    return text
