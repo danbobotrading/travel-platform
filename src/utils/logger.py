@@ -14,6 +14,7 @@ from structlog.processors import (
     add_log_level,
     UnicodeDecoder,
     format_exc_info,
+    KeyValueRenderer
 )
 from structlog.types import EventDict, Processor
 from structlog.stdlib import (
@@ -24,26 +25,27 @@ from structlog.stdlib import (
 )
 from structlog.contextvars import merge_contextvars
 
-# Import settings from src.core.config
+# Try to import settings, with fallback
 try:
     from src.core.config.settings import settings
+    HAS_SETTINGS = True
 except ImportError:
-    # Fallback for development
-    from dataclasses import dataclass
-    
-    @dataclass
+    # Fallback settings for testing
     class FallbackSettings:
-        APP_ENV: str = "development"
-        LOG_LEVEL: str = "INFO"
-        LOG_FORMAT: str = "console"
+        APP_ENV = "development"
+        LOG_LEVEL = "INFO"
+        LOG_FORMAT = "console"
+        DEBUG = False
     
     settings = FallbackSettings()
+    HAS_SETTINGS = False
 
 
 class TravelPlatformLogger:
     """Main logger class for Travel Platform."""
     
     _logger: Optional[BoundLogger] = None
+    _configured = False
     
     @classmethod
     def _get_processors(cls) -> List[Processor]:
@@ -68,20 +70,20 @@ class TravelPlatformLogger:
                 JSONRenderer()
             ])
         else:
-            # Pretty console output for development
+            # Try ConsoleRenderer, fallback to KeyValueRenderer
             try:
                 from structlog.dev import ConsoleRenderer
                 processors.extend([
                     format_exc_info,
                     cls._clean_sensitive_data,
-                    ConsoleRenderer(colors=True)
+                    ConsoleRenderer(colors=False)  # Disable colors to avoid colorama issue
                 ])
             except ImportError:
                 # Fallback if ConsoleRenderer not available
                 processors.extend([
                     format_exc_info,
                     cls._clean_sensitive_data,
-                    structlog.processors.KeyValueRenderer()
+                    KeyValueRenderer()
                 ])
         
         return processors
@@ -105,6 +107,9 @@ class TravelPlatformLogger:
     @classmethod
     def _configure_logging(cls) -> None:
         """Configure structlog and standard logging."""
+        if cls._configured:
+            return
+        
         # Get log level from settings or default to INFO
         log_level = getattr(settings, 'LOG_LEVEL', 'INFO').upper()
         log_level_num = getattr(logging, log_level, logging.INFO)
@@ -123,13 +128,13 @@ class TravelPlatformLogger:
             level=logging.WARNING,  # Only show warnings for third-party libs
             stream=sys.stdout,
         )
+        
+        cls._configured = True
     
     @classmethod
     def get_logger(cls, name: str = "travel_platform") -> BoundLogger:
         """Get a logger instance."""
-        if cls._logger is None:
-            cls._configure_logging()
-        
+        cls._configure_logging()
         return structlog.get_logger(name)
     
     @classmethod
@@ -195,3 +200,14 @@ def log_user_action(user_id: str, action: str, details: Dict[str, Any]) -> None:
         details=details,
         timestamp=datetime.utcnow().isoformat()
     )
+
+
+# Simple test when run directly
+if __name__ == "__main__":
+    print("Testing TravelPlatformLogger...")
+    logger.info("test_direct_run", status="starting")
+    TravelPlatformLogger.bind_context(test_id="123")
+    logger.info("with_context", data={"test": True})
+    TravelPlatformLogger.clear_context()
+    logger.info("test_complete", status="success")
+    print("✅ Logger test complete")

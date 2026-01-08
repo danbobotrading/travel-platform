@@ -1,6 +1,7 @@
 ﻿from pydantic import Field, PostgresDsn, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import Optional, List, Union
+import json
 import os
 
 
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     
     # Telegram
     TELEGRAM_BOT_TOKEN: SecretStr = Field(
-        ...,
+        default="dummy_token",  # Provide default for testing
         description="Telegram Bot Token",
         min_length=10
     )
@@ -55,11 +56,26 @@ class Settings(BaseSettings):
     CACHE_TTL: int = Field(default=300, description="Default cache TTL in seconds")
     CACHE_PREFIX: str = Field(default="travel", description="Cache key prefix")
     
+    @classmethod
+    def parse_telegram_admin_ids(cls, v: Union[str, List[int]]) -> List[int]:
+        """Parse TELEGRAM_ADMIN_IDS from string or list."""
+        if isinstance(v, str):
+            try:
+                # Try to parse as JSON
+                return json.loads(v)
+            except json.JSONDecodeError:
+                # Try comma-separated list
+                return [int(x.strip()) for x in v.split(",") if x.strip()]
+        return v
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
-        extra = "ignore"  # This allows extra fields in .env
+        extra = "ignore"  # Allow extra fields
+        json_encoders = {
+            List[int]: lambda v: json.dumps(v)
+        }
 
 
 # Create settings instance
