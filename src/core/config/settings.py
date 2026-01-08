@@ -1,6 +1,6 @@
 ﻿from pydantic import Field, PostgresDsn, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 import os
 
 
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
         default="https://api.telegram.org/bot",
         description="Telegram API base URL"
     )
-    TELEGRAM_ADMIN_IDS: list[int] = Field(
+    TELEGRAM_ADMIN_IDS: List[int] = Field(
         default_factory=lambda: [123456789],
         description="List of admin Telegram IDs"
     )
@@ -59,6 +59,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "ignore"  # This allows extra fields in .env
 
 
 # Create settings instance
